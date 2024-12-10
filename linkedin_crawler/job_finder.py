@@ -18,7 +18,7 @@ def load_config(file_name):
     with open(file_name) as f:
         return json.load(f)
 
-def get_with_retry(url, config, retries=3, delay=1):
+def get_with_retry(url, config, retries=4, delay=1):
     # Get the URL with retries and delay
     for i in range(retries):
         try:
@@ -31,9 +31,11 @@ def get_with_retry(url, config, retries=3, delay=1):
             return BeautifulSoup(r.content, 'html.parser')
         except requests.exceptions.Timeout:
             print(f"Timeout occurred for URL: {url}, retrying in {delay}s...")
-            tm.sleep(delay)
         except Exception as e:
             print(f"An error occurred while retrieving the URL: {url}, error: {e}")
+        finally:
+            tm.sleep(delay)
+            delay *= 2  # Increase delay exponentially on each retry
     return None
 
 def transform(soup):
@@ -64,15 +66,16 @@ def transform(soup):
             'date': date,
             'job_url': job_url,
             'job_description': job_description,
-            'applied': 0,
-            'hidden': 0,
-            'interview': 0,
-            'rejected': 0
         }
         joblist.append(job)
     return joblist
 
 def transform_job(soup):
+    job_details = {
+        'job_description': "None",
+        'recruiter_name': "None",
+        'recruiter_position': "None"
+    }
     div = soup.find('div', class_='description__text description__text--rich')
     if div:
         # Remove unwanted elements
@@ -89,10 +92,16 @@ def transform_job(soup):
         text = text.replace('::marker', '-')
         text = text.replace('-\n', '- ')
         text = text.replace('Show less', '').replace('Show more', '')
-        return text
-    else:
-        return "Could not find Job Description"
-
+        
+        job_details['job_description'] = text
+        
+        recruiter_div = soup.find('div', class_='message-the-recruiter')
+        if recruiter_div:  
+            job_details['recruiter_name'] = recruiter_div.find('h3', class_='base-main-card__title')
+            job_details['recruiter_position'] = recruiter_div.find('h4', class_='base-main-card__subtitle')
+            
+    return job_details
+    
 def safe_detect(text):
     try:
         return detect(text)
@@ -287,7 +296,11 @@ def main(config_file):
                 continue
             print('Found new job: ', job['title'], 'at ', job['company'], job['job_url'])
             desc_soup = get_with_retry(job['job_url'], config)
-            job['job_description'] = transform_job(desc_soup)
+            if not desc_soup:
+                print('Failed to get job description: ', job['job_url'])
+                continue
+            job_details = transform_job(desc_soup)
+            job.update(job_details)
             language = safe_detect(job['job_description'])
             if language not in config['languages']:
                 print('Job description language not supported: ', language)
@@ -303,7 +316,28 @@ def main(config_file):
         df['date_loaded'] = datetime.now()
         df_filtered['date_loaded'] = datetime.now()
         df['date_loaded'] = df['date_loaded'].astype(str)
-        df_filtered['date_loaded'] = df_filtered['date_loaded'].astype(str)        
+        df_filtered['date_loaded'] = df_filtered['date_loaded'].astype(str)
+
+        
+        # Add columns for job_processor
+        df['address'] = None
+        df['phone_number'] = None
+        df['main_products'] = None
+        df['match_percentage'] = None
+        df['overall_assessment'] = None
+        df['recommended_next_steps'] = None
+        df['matched_skills'] = None
+        df['skill_gaps'] = None
+        
+        df_filtered['address'] = None
+        df_filtered['phone_number'] = None
+        df_filtered['main_products'] = None
+        df_filtered['match_percentage'] = None
+        df_filtered['overall_assessment'] = None
+        df_filtered['recommended_next_steps'] = None
+        df_filtered['matched_skills'] = None
+        df_filtered['skill_gaps'] = None
+        
         
         if conn is not None:
             #Update or Create the database table for the job list
