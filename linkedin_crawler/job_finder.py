@@ -38,7 +38,7 @@ def get_with_retry(url, config, retries=4, delay=1):
             delay *= 2  # Increase delay exponentially on each retry
     return None
 
-def transform(soup):
+def transform(soup, remote_status):
     # Parsing the job card info (title, company, location, date, job_url) from the beautiful soup object
     joblist = []
     try:
@@ -66,6 +66,7 @@ def transform(soup):
             'date': date,
             'job_url': job_url,
             'job_description': job_description,
+            'remote_status': remote_status
         }
         joblist.append(job)
     return joblist
@@ -97,8 +98,10 @@ def transform_job(soup):
         
         recruiter_div = soup.find('div', class_='message-the-recruiter')
         if recruiter_div:  
-            job_details['recruiter_name'] = recruiter_div.find('h3', class_='base-main-card__title')
-            job_details['recruiter_position'] = recruiter_div.find('h4', class_='base-main-card__subtitle')
+            recruiter_name_tag = recruiter_div.find('h3', class_='base-main-card__title')
+            recruiter_position_tag = recruiter_div.find('h4', class_='base-main-card__subtitle')
+            job_details['recruiter_name'] = recruiter_name_tag.get_text(strip=True)
+            job_details['recruiter_position'] = recruiter_position_tag.get_text(strip=True)
             
     return job_details
     
@@ -244,7 +247,17 @@ def get_jobcards(config):
             for i in range (0, config['pages_to_scrape']):
                 url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keywords}&location={location}&f_TPR=&f_WT={query['f_WT']}&geoId=&f_TPR={config['timespan']}&start={25*i}"
                 soup = get_with_retry(url, config)
-                jobs = transform(soup)
+                
+                if  query['f_WT'] == '0':
+                    remote_status = "onsite"
+                elif query['f_WT'] == '1':
+                    remote_status = "hybrid"
+                elif query['f_WT'] == '2':
+                    remote_status = "remote"
+                else:
+                    remote_status = "None"
+                    
+                jobs = transform(soup, remote_status)
                 all_jobs = all_jobs + jobs
                 print("Finished scraping page: ", url)
     print ("Total job cards scraped: ", len(all_jobs))

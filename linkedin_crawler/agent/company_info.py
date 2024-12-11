@@ -17,7 +17,7 @@ instruct_llm = get_vertex_llm()
 # Tools
 
 GoogleSearchAPIWrapper()
-def search_online(search_query: str) -> str:
+async def search_online(search_query: str) -> str:
     """It searches on the internet to get information.
 
     Args:
@@ -26,7 +26,7 @@ def search_online(search_query: str) -> str:
     
     search = GoogleSearchRun(api_wrapper=GoogleSearchAPIWrapper())
 
-    search_res = search.invoke(search_query)
+    search_res = await search.ainvoke(search_query)
     return search_res
 
 tools = [search_online]
@@ -53,7 +53,7 @@ class CompanyInfoOutput(TypedDict):
     
 
 # Nodes
-def search_company_info(state):
+async def search_company_info(state):
     sys_msg = r"""# Objective
 Retrieve company information using the `search_online` tool.
 
@@ -103,19 +103,41 @@ Retrieve company information using the `search_online` tool.
 ## Constraints
 - Use only verifiable information
 - Indicate if data is incomplete
+- If any infomation can't be found, clearly state "Information Not Found"
     """
     
     msg = f"""
     Find company information of {state['company']}
     """
-    response = research_llm.invoke([SystemMessage(content=sys_msg), HumanMessage(content=msg)] + state['messages'])
+    
+    reminder_msg = """
+    Please remember to use this following output format
+    ## Output Format
+```json
+{
+  "company": "",
+  "address": "",
+  "phone_number": "",
+  "main_products": [
+    {
+      "name": "",
+      "description": "",
+      "use_cases": [
+        ""
+      ]
+    }
+  ]
+}
+```
+    """
+    response = await research_llm.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=msg)] + state['messages'] + [HumanMessage(content=reminder_msg)])
     
     return {
         'messages': [response]
     }
     
 
-def extract_company_info(state):
+async def extract_company_info(state):
     company_info_message = state['messages'][-1]
     try:
         company_info = extract_json(company_info_message.content)
